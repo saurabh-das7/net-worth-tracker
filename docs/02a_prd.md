@@ -158,10 +158,15 @@ it gets a dedicated deep-dive in the UX Flow doc rather than being guessed at in
 
 **Holdings** — One row per holding: name, category, units, current value, invested,
 realized + unrealized gain, XIRR, benchmark XIRR, liquidity tier, staleness indicator.
-Category filter chips. CSV import/export. **No click-through to a price modal** — value
-history management moves to its own tab (see Asset Value Trends, below). Each holding
-has a **base currency** (assigned at setup, editable) and a **liquidity tier** —
-LLM-suggested by default from the asset's category, always manually overridable.
+**For balance-snapshot assets** (Cash, Accounts, Debt, Loans, Security Deposits): units,
+XIRR, and benchmark XIRR columns show as not applicable — these rows contribute to Net
+Worth and Liquidity view only, not to Returns metrics. **Liquidity tiers apply to
+assets, not liabilities** — Debt/Loan balances net into total Net Worth but sit outside
+the liquidity-tier strip entirely. Category filter chips. CSV import/export. **No
+click-through to a price modal** — value history management moves to its own tab (see
+Asset Value Trends, below). Each holding has a **base currency** (assigned at setup,
+editable) and a **liquidity tier** — LLM-suggested by default from the asset's
+category, always manually overridable.
 
 **Asset Value Trends** *(new tab)* — Dedicated space to view any asset's value trend
 over time, whether currently held or not (e.g. watch a fund before buying, or keep
@@ -218,10 +223,22 @@ Nasdaq, Gold, FD reference rate, extensible), matching the Goals section above.
 
 ## Design principles
 
-- **Transaction-based, always.** No feature may allow editing a balance directly instead
-  of recording a transaction.
-- **Unit-aware.** Investable assets are `units × price`; plain-value assets are not
-  force-fit into a unit model.
+- **Transaction-based, always — for investable assets.** No feature may allow editing
+  a balance directly instead of recording a transaction, for anything on the Auto or
+  Manual price-feed tracking methods. Balance-snapshot assets (see Unit-aware, below)
+  are the deliberate, documented exception — there's no "transaction" concept for a
+  savings account balance, only a periodic total-value entry.
+- **Unit-aware, with three tracking methods per asset.** (1) **Auto price-feed** —
+  `units × auto-fetched price` for anything with a public price source. (2) **Manual
+  price-feed** — `units × manually-entered price`, same Asset Value Trends mechanism,
+  no live source. (3) **Balance-snapshot** — for Cash, Bank Accounts, Credit Card debt,
+  Loans, and Security Deposits: no buy/sell transactions at all, just a total value
+  entered per date. This reuses the exact same Asset Value Trends mechanism as price
+  tracking (units implicitly = 1, the entered "price" *is* the balance) — not a special
+  case, a degenerate case of the same model. **XIRR and benchmark comparison apply only
+  to the first two tracking methods** — a savings account balance doesn't have a
+  meaningful "return." Balance-snapshot assets still count fully toward Net Worth and
+  the Liquidity view.
 - **Privacy-first, precisely stated.** No custom backend server ever touches transaction
   data. The only external calls are to Google's own services — Drive for storage and
   access control, Gemini for LLM-assisted parsing — both under the same account-level
