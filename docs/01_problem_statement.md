@@ -38,6 +38,15 @@ a wealth-management subscription or handing portfolio data to a third-party fint
 - **Stale prices silently corrupt the picture.** Manually-checkpointed holdings (ELSS
   funds, unlisted stock) drift out of date with no warning, so the dashboard can look
   accurate while quietly being wrong.
+- **Nothing updates itself.** Every value in every spreadsheet is only as current as the
+  last time I sat down and typed it in — there's no daily trend, just a series of manual
+  snapshots taken whenever I remember to.
+- **No single-currency truth.** Holdings span INR and USD; without a tracked daily FX
+  rate, "what am I actually worth" requires a manual conversion I mostly skip, so I
+  usually only look at the two currencies separately rather than one true number.
+- **Realized gains are invisible.** Spreadsheets show current unrealized value, but the
+  actual booked profit/loss from assets already sold — by year, by asset class — isn't
+  tracked anywhere, so I can't see whether past exits were good decisions in hindsight.
 
 ## Why now
 
