@@ -8,9 +8,9 @@ individually instead of via a catch-all bucket.
 **Tracking methods:** Auto (price-feed) · Manual (price-feed) · Balance-snapshot (see
 PRD Design Principles — no units, a total value per date).
 
-**Two open items before this is fully locked** (flagged inline below, both marked ⚠):
-whether Recovery Tokens genuinely has no price source, and confirming SGB tradability
-via Twelve Data once we're building.
+**One open item remaining before this is fully locked** (flagged inline below):
+confirming SGB's actual price-source coverage once we're building — not a blocker,
+since the manual fallback already exists.
 
 | Investment | Category | Base Ccy | Tracking | Source / Symbol | Liquidity Tier |
 |---|---|---|---|---|---|
@@ -18,9 +18,9 @@ via Twelve Data once we're building.
 | Quant Tax Fund | ELSS | INR | Auto | AMFI NAV | Illiquid (3-yr lock) |
 | Tata Focussed Equity Fund | Equity Fund | INR | Auto | AMFI NAV | Short |
 | Zerodha Nifty LargeMidcap 250 Index Fund | Index Fund | INR | Auto | AMFI NAV | Short |
-| LINK – WazirX | Cryptocurrency | INR/USD¹ | Auto | CoinGecko | Immediate |
-| XRP – WazirX | Cryptocurrency | INR/USD¹ | Auto | CoinGecko | Immediate |
-| Recovery Tokens (516.9623) | Cryptocurrency | INR/USD¹ | Manual ⚠ | No public feed | Illiquid |
+| LINK – WazirX | Cryptocurrency | INR | Auto | CoinGecko | Immediate |
+| XRP – WazirX | Cryptocurrency | INR | Auto | CoinGecko | Immediate |
+| Recovery Tokens (516.9623) | Cryptocurrency | INR | Manual | No public feed — confirmed | Illiquid |
 | BNB – Binance | Cryptocurrency | USD | Auto | CoinGecko | Immediate |
 | USDT – Binance | Cryptocurrency | USD | Auto | CoinGecko | Immediate |
 | POL – Binance | Cryptocurrency | USD | Auto | CoinGecko | Immediate |
@@ -71,10 +71,6 @@ via Twelve Data once we're building.
 | NVDA | US Stocks & ETF | USD | Auto | Twelve Data (NASDAQ: NVDA) | Immediate |
 | EPFO | PF | INR | Manual | No free EPFO balance API found | Illiquid |
 
-¹ Crypto held on WazirX is priced in whichever currency CoinGecko quotes it in;
-functionally this just needs a consistent base currency per holding — confirm INR vs
-USD preference for the WazirX-held tokens specifically when we get to build.
-
 ## Summary by tracking method
 
 - **Auto (price-feed):** 30 assets — the large majority. AMFI covers the 4 mutual
@@ -84,13 +80,14 @@ USD preference for the WazirX-held tokens specifically when we get to build.
   stocks, and EPFO. All genuinely have no free public price source.
 - **Balance-snapshot:** 15 assets — every Cash/Account/Debt/Loan/Security Deposit
   entry. No units, no XIRR, no benchmark comparison — Net Worth and Liquidity view only.
-- **Auto, but flagged as uncertain until verified in build:** SGB (thin trading, may
-  fall back to manual).
+- **Auto, to be confirmed during build:** SGB (SGBSEP29VI-GB) — thin trading means
+  Twelve Data coverage is genuinely uncertain; try it first, fall back to manual if the
+  symbol doesn't resolve. Not a blocker either way, since the manual fallback path
+  already exists for every other asset in this position.
 
-## Open items before this is fully locked
+## Status
 
-- ⚠ Confirm Recovery Tokens genuinely has no price source, or if there's a specific
-  exchange/project reference price worth trying.
-- ⚠ Verify SGBSEP29VI-GB's actual coverage on Twelve Data once building — likely to
-  need the manual fallback.
-- Confirm base currency (INR vs USD) for the two WazirX-held crypto tokens.
+Recovery Tokens (manual, confirmed) and WazirX crypto currency (INR, confirmed) are
+resolved. The only remaining open item is verifying SGB's actual API coverage once
+we're building — everything else in this doc is locked and ready to seed `settings.json`
+at M2.
