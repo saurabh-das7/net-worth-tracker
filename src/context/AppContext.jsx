@@ -80,7 +80,10 @@ export function AppProvider({ children }) {
   )
 
   const addAlert = useCallback((alert) => {
-    setAlerts((prev) => [...prev, { id: crypto.randomUUID(), ...alert }])
+    // Replace any existing alert for this asset rather than appending a duplicate -
+    // otherwise a new failure's message can get hidden behind a stale older one when
+    // multiple lookups are found for the same asset ("find" returns the first match).
+    setAlerts((prev) => [...prev.filter((a) => a.assetId !== alert.assetId), { id: crypto.randomUUID(), ...alert }])
   }, [])
 
   const dismissAlert = useCallback((id) => {

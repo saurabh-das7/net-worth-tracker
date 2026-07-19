@@ -235,8 +235,10 @@ function ManageAssetsTable({ readOnly }) {
   const [testing, setTesting] = useState(null) // assetId currently being test-fetched
 
   const rows = useMemo(() => {
+    // Now includes balance-snapshot assets (Cash/Account/Debt/Loan/Security Deposit)
+    // too - they don't have tracking/source/symbol to manage, but their staleness is
+    // exactly as worth seeing at a glance as any price-tracked asset's.
     return Object.entries(assets)
-      .filter(([, a]) => a.trackingMethod !== 'balance_snapshot')
       .map(([id, a]) => ({ id, ...a }))
       .filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -255,10 +257,10 @@ function ManageAssetsTable({ readOnly }) {
     return field in draft ? draft[field] : row[field]
   }
 
-  // Staleness applies to ANY price-tracked asset, manual or auto - manual ones (NPS,
-  // EPFO, unlisted stocks) are exactly the most likely to go stale, and the previous
-  // version only ever checked staleness when trackingMethod === 'auto', leaving every
-  // manual asset permanently showing a blank "—" no matter how old its last entry was.
+  // Two-tier staleness specifically for this table's at-a-glance view: 10+ days is
+  // "stale", 30+ days is "very stale" - a finer distinction than the single 15-day
+  // threshold that drives the PRD's actual alert badge/count elsewhere. Applies to
+  // every asset with any data, price-tracked or balance-snapshot, manual or auto.
   function statusFor(row, trackingMethod) {
     if (testing === row.id) return { label: 'testing…', cls: 'stale-badge' }
     const alert = alerts.find((a) => a.assetId === row.id)
@@ -272,8 +274,10 @@ function ManageAssetsTable({ readOnly }) {
     }
     const dates = Object.keys(series).sort()
     const lastDate = dates[dates.length - 1]
-    const stale = Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) >= STALE_DAYS
-    if (stale) return { label: `⚠ stale (since ${lastDate})`, cls: 'stale-badge' }
+    const daysOld = Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000)
+
+    if (daysOld >= 30) return { label: `⚠ very stale (${daysOld}d, since ${lastDate})`, cls: 'stale-badge' }
+    if (daysOld >= 10) return { label: `⚠ stale (${daysOld}d, since ${lastDate})`, cls: 'stale-badge' }
     return trackingMethod === 'auto'
       ? { label: 'connected', cls: 'status-ok' }
       : { label: `up to date (${lastDate})`, cls: 'status-ok' }
@@ -351,6 +355,7 @@ function ManageAssetsTable({ readOnly }) {
         </thead>
         <tbody>
           {rows.map((row) => {
+            const isBalanceSnapshot = row.trackingMethod === 'balance_snapshot'
             const dirty = !!drafts[row.id]
             const trackingMethod = effectiveValue(row, 'trackingMethod')
             const source = effectiveValue(row, 'source')
@@ -360,17 +365,21 @@ function ManageAssetsTable({ readOnly }) {
                 <td>{row.name}</td>
                 <td>{row.category}</td>
                 <td>
-                  <select
-                    value={trackingMethod}
-                    disabled={readOnly}
-                    onChange={(e) => updateDraft(row.id, 'trackingMethod', e.target.value)}
-                  >
-                    <option value="manual">Manual</option>
-                    <option value="auto">Auto</option>
-                  </select>
+                  {isBalanceSnapshot ? (
+                    'Balance-snapshot'
+                  ) : (
+                    <select
+                      value={trackingMethod}
+                      disabled={readOnly}
+                      onChange={(e) => updateDraft(row.id, 'trackingMethod', e.target.value)}
+                    >
+                      <option value="manual">Manual</option>
+                      <option value="auto">Auto</option>
+                    </select>
+                  )}
                 </td>
                 <td>
-                  {trackingMethod === 'auto' ? (
+                  {isBalanceSnapshot ? '—' : trackingMethod === 'auto' ? (
                     <select
                       value={source || ''}
                       disabled={readOnly}
@@ -384,7 +393,7 @@ function ManageAssetsTable({ readOnly }) {
                   ) : '—'}
                 </td>
                 <td>
-                  {trackingMethod === 'auto' && source === 'fixed' ? (
+                  {isBalanceSnapshot ? '—' : trackingMethod === 'auto' && source === 'fixed' ? (
                     <input
                       className="manage-symbol-input"
                       type="number"
@@ -404,15 +413,17 @@ function ManageAssetsTable({ readOnly }) {
                   ) : '—'}
                 </td>
                 <td>
-                  <select
-                    value={effectiveValue(row, 'liquidityTier') || ''}
-                    disabled={readOnly}
-                    onChange={(e) => updateDraft(row.id, 'liquidityTier', e.target.value)}
-                  >
-                    {LIQUIDITY_TIERS.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+                  {isBalanceSnapshot ? '—' : (
+                    <select
+                      value={effectiveValue(row, 'liquidityTier') || ''}
+                      disabled={readOnly}
+                      onChange={(e) => updateDraft(row.id, 'liquidityTier', e.target.value)}
+                    >
+                      {LIQUIDITY_TIERS.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  )}
                 </td>
                 <td>
                   <span className={status.cls} title={status.title}>{status.label}</span>
