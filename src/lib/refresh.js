@@ -72,10 +72,10 @@ export async function refreshOne(assetMasterEntry, existingSeries, firstTxnDate)
   try {
     let newPoints
     if (assetMasterEntry.source === 'AMFI') {
-      if (!assetMasterEntry.amfiSchemeCode) {
+      if (!assetMasterEntry.symbol) {
         throw new Error('No AMFI scheme code mapped for this fund yet — add one in Manage Assets below.')
       }
-      newPoints = await fetchAmfiHistory(assetMasterEntry.amfiSchemeCode, fromDate)
+      newPoints = await fetchAmfiHistory(assetMasterEntry.symbol, fromDate)
     } else if (assetMasterEntry.source === 'CoinGecko') {
       const days = Math.max(
         1,
