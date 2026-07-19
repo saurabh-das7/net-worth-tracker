@@ -95,3 +95,15 @@ export const BENCHMARKS = [
 ]
 
 export const FX_PSEUDO_ASSET = { id: 'FX_USD_INR', name: 'USD/INR', source: 'TwelveData', symbol: 'USD/INR' }
+
+// Converts the flat ASSET_MASTER array into the { assets: { id: {...} } } map shape
+// settings.json actually stores — this is what seeds a brand-new My Data connection,
+// so the Transactions/Holdings dropdowns aren't empty on first use.
+export function buildInitialSettings() {
+  const assets = {}
+  for (const a of ASSET_MASTER) {
+    const { id, ...rest } = a
+    assets[id] = rest
+  }
+  return { assets }
+}

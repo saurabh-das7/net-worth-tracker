@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useApp } from '../context/AppContext.jsx'
 
 export default function Transactions() {
@@ -21,6 +21,17 @@ export default function Transactions() {
   })
 
   const readOnly = dataSource !== 'mydata'
+
+  // priceAssets can change out from under this component - switching Demo <-> My Data
+  // swaps the entire asset list. Without this, the dropdown's value can point at an
+  // asset that no longer exists in the current list, which renders as an unusable
+  // blank <select> even though the underlying state still holds a stale id.
+  useEffect(() => {
+    const stillValid = priceAssets.some((a) => a.id === form.assetId)
+    if (!stillValid && priceAssets.length) {
+      setForm((f) => ({ ...f, assetId: priceAssets[0].id }))
+    }
+  }, [priceAssets])
 
   function addTransaction(e) {
     e.preventDefault()

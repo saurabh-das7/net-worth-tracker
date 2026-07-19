@@ -6,6 +6,7 @@
 // account setup steps). In mock mode, "Drive" is simulated with localStorage under a
 // clearly-separate key, so the whole app is testable end to end before real OAuth is
 // wired in. Swap MOCK_MODE off once a real Client ID is in .env.local.
+import { buildInitialSettings } from '../data/assetMaster.js'
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID || ''
 export const MOCK_MODE = !CLIENT_ID || CLIENT_ID === 'DUMMY_CLIENT_ID'
@@ -96,7 +97,7 @@ export async function ensureAppFolderAndFiles() {
 }
 
 function blankDefaultFor(fileName) {
-  if (fileName === 'settings.json') return { assets: {} }
+  if (fileName === 'settings.json') return buildInitialSettings()
   if (fileName === 'transactions.json') return { transactions: [] }
   if (fileName === 'asset_trends.json') return { trends: {} }
   return {}
