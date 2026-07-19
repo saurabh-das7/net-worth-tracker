@@ -25,6 +25,7 @@ export default function LeftPanel({ activeTab, onTabChange }) {
     syncNow,
     alerts,
     mockMode,
+    twelveDataMocked,
   } = useApp()
 
   const activeAlerts = alerts.length
@@ -34,6 +35,12 @@ export default function LeftPanel({ activeTab, onTabChange }) {
       <div className="brand">Net Worth Tracker</div>
 
       {mockMode && <div className="mock-badge">Mock Drive mode — no real Client ID set</div>}
+      {twelveDataMocked && (
+        <div className="mock-badge">
+          Mock price data — VITE_TWELVE_DATA_API_KEY not seen by the build. Check it's
+          a Repository secret (not Environment) with the exact name.
+        </div>
+      )}
 
       <ul className="tabs">
         {TABS.map((t) => (

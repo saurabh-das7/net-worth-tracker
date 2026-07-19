@@ -19,8 +19,14 @@ export default function AssetTrends() {
 
   // Picker includes held assets, the FX pseudo-asset, and the four benchmarks — all
   // using the same trend/edit/backfill machinery, per the PRD.
+  //
+  // IMPORTANT: use Object.entries (the map KEY) for id, not a.id. Demo's dataset
+  // happens to redundantly store `id` inside each asset value too, which is why this
+  // worked in Demo but silently broke in My Data - buildInitialSettings() correctly
+  // does NOT duplicate id inside the value (it's already the object key), so a.id was
+  // undefined there, making every <option value> collapse to the same empty string.
   const pickerOptions = useMemo(() => {
-    const heldOptions = Object.values(assets).map((a) => ({ id: a.id, name: a.name, source: a.source, symbol: a.symbol }))
+    const heldOptions = Object.entries(assets).map(([id, a]) => ({ id, name: a.name, source: a.source, symbol: a.symbol }))
     const fxOption = { id: FX_PSEUDO_ASSET.id, name: FX_PSEUDO_ASSET.name, source: FX_PSEUDO_ASSET.source, symbol: FX_PSEUDO_ASSET.symbol }
     const benchmarkOptions = BENCHMARKS.map((b) => ({ id: b.id, name: b.name, source: b.source, symbol: b.symbol, assumedAnnualRate: b.assumedAnnualRate }))
     return [...heldOptions, fxOption, ...benchmarkOptions]
@@ -43,11 +49,22 @@ export default function AssetTrends() {
 
   const selected = pickerOptions.find((o) => o.id === selectedId)
   const series = trends[selectedId] || {}
-  const chartData = Object.entries(series)
+  const fullChartData = Object.entries(series)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, value]) => ({ date, value }))
 
-  const lastActualDate = chartData.length ? chartData[chartData.length - 1].date : null
+  const [range, setRange] = useState('1Y')
+  const RANGES = { '3M': 90, '1Y': 365, '3Y': 1095, '5Y': 1825, All: Infinity }
+  const chartData = useMemo(() => {
+    const days = RANGES[range]
+    if (days === Infinity) return fullChartData
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - days)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    return fullChartData.filter((d) => d.date >= cutoffStr)
+  }, [fullChartData, range])
+
+  const lastActualDate = fullChartData.length ? fullChartData[fullChartData.length - 1].date : null
   const isStale = daysSince(lastActualDate) >= STALE_DAYS
 
   const alertForAsset = alerts.find((a) => a.assetId === selectedId)
@@ -103,6 +120,18 @@ export default function AssetTrends() {
 
   function saveSymbol() {
     if (readOnly || !symbolDraft) return
+    if (!assets[selectedId]) {
+      // Benchmarks and the FX pseudo-asset aren't stored in settings.assets - their
+      // symbols come from static config (assetMaster.js), not per-user settings.
+      // Correcting one of those isn't wired up yet - flagged honestly rather than
+      // silently writing a bogus entry into settings that nothing would ever read.
+      addAlert({
+        assetId: selectedId,
+        type: 'sync_error',
+        message: `${selected?.name}: symbol correction for benchmarks/FX isn't supported yet - only held assets.`,
+      })
+      return
+    }
     updateFile('settings.json', (prev) => ({
       assets: {
         ...prev.assets,
@@ -141,7 +170,12 @@ export default function AssetTrends() {
         <span>
           Symbol/code: <strong>{selected?.symbol || '(none)'}</strong>
         </span>
-        {assets[selectedId]?.source === 'TwelveData' || FX_PSEUDO_ASSET.id === selectedId ? (
+        {/* Was checking assets[selectedId]?.source, which only resolves for held
+            assets - benchmarks and the FX pseudo-asset aren't in the assets map at
+            all, so their TwelveData-sourced entries (Nasdaq/QQQ proxy, USD/INR) never
+            showed the symbol-edit field even though they legitimately need it too.
+            'selected' is already uniformly resolved across all three types. */}
+        {selected?.source === 'TwelveData' ? (
           <span className="edit-symbol">
             <input
               placeholder="correct symbol…"
@@ -159,6 +193,17 @@ export default function AssetTrends() {
       {alertForAsset && <div className="error-banner">⚠ {alertForAsset.message}</div>}
 
       <div className="chart-box">
+        <div className="chip-row">
+          {Object.keys(RANGES).map((r) => (
+            <button
+              key={r}
+              className={r === range ? 'chip active' : 'chip'}
+              onClick={() => setRange(r)}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />

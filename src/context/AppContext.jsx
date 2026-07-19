@@ -5,6 +5,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { bufferRead } from '../lib/db.js'
 import { commitChange, syncNow, pullFromDrive, onSyncStatusChange } from '../lib/sync.js'
 import { signIn, signOut, isSignedIn, ensureAppFolderAndFiles, MOCK_MODE } from '../lib/drive.js'
+import { isTwelveDataMocked } from '../lib/priceSources.js'
 import { DEMO_DATA } from '../data/demoData.js'
 
 const AppContext = createContext(null)
@@ -105,6 +106,7 @@ export function AppProvider({ children }) {
     addAlert,
     dismissAlert,
     mockMode: MOCK_MODE,
+    twelveDataMocked: isTwelveDataMocked,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
