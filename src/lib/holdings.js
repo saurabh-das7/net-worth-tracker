@@ -21,6 +21,7 @@ export function computeHoldings(settingsFile, transactionsFile, trendsFile, asOf
   for (const [assetId, asset] of Object.entries(assets)) {
     if (asset.trackingMethod === 'balance_snapshot') {
       const value = latestValueOnOrBefore(trends[assetId], today)
+      if (value === null) continue // no balance entry recorded yet - don't show a zero row
       holdings.push({
         assetId,
         name: asset.name,
@@ -29,7 +30,7 @@ export function computeHoldings(settingsFile, transactionsFile, trendsFile, asOf
         trackingMethod: asset.trackingMethod,
         isLiability: !!asset.isLiability,
         units: null,
-        currentValue: value ?? 0,
+        currentValue: value,
         invested: null, // no meaningful "invested" figure for a balance-snapshot asset
         unrealizedGain: null,
         liquidityTier: asset.liquidityTier,
@@ -41,6 +42,8 @@ export function computeHoldings(settingsFile, transactionsFile, trendsFile, asOf
     const assetTxns = transactions
       .filter((t) => t.assetId === assetId)
       .sort((a, b) => a.date.localeCompare(b.date))
+
+    if (!assetTxns.length) continue // never transacted in - don't show a zero row
 
     let units = 0
     let invested = 0
