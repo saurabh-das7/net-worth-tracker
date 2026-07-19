@@ -5,6 +5,7 @@
 // 4. forward-fill any gap dates up to yesterday from the prior value
 // 5. never write today's date
 import { fetchAmfiHistory, fetchCoinGeckoHistory, fetchTwelveDataHistory } from './priceSources.js'
+import { fetchGoogleFinanceHistory } from './googleSheets.js'
 
 function yesterday() {
   const d = new Date()
@@ -83,6 +84,8 @@ export async function refreshOne(assetMasterEntry, existingSeries, firstTxnDate)
       newPoints = await fetchCoinGeckoHistory(assetMasterEntry.symbol, days)
     } else if (assetMasterEntry.source === 'TwelveData') {
       newPoints = await fetchTwelveDataHistory(assetMasterEntry.symbol, fromDate, target)
+    } else if (assetMasterEntry.source === 'GoogleFinance') {
+      newPoints = await fetchGoogleFinanceHistory(assetMasterEntry.symbol, fromDate, target)
     } else if (assetMasterEntry.source === 'fixed') {
       // FD reference rate — compounds daily from the assumed annual rate rather than
       // being fetched, per the Tech Stack doc's resolution.

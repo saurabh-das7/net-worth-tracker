@@ -45,13 +45,13 @@ export const ASSET_MASTER = [
   { id: 'cbi_edu_loan', name: 'CBI Education Loan', category: 'Loan', baseCurrency: 'INR', trackingMethod: 'balance_snapshot', source: null, symbol: '', liquidityTier: null, isLiability: true },
 
   // --- Indian stocks (Auto via Twelve Data) ---
-  { id: 'bel', name: 'BEL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'BEL', liquidityTier: 'Immediate' },
-  { id: 'sbin', name: 'SBIN', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'SBIN', liquidityTier: 'Immediate' },
-  { id: 'hal', name: 'HAL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'HAL', liquidityTier: 'Immediate' },
-  { id: 'hdfcbank', name: 'HDFC BANK', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'HDFCBANK', liquidityTier: 'Immediate' },
-  { id: 'jiofin', name: 'JIOFIN', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'JIOFIN', liquidityTier: 'Immediate' },
-  { id: 'mazdock', name: 'MAZDOCK', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'MAZDOCK', liquidityTier: 'Immediate' },
-  { id: 'eternal', name: 'ETERNAL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'ETERNAL', liquidityTier: 'Immediate' },
+  { id: 'bel', name: 'BEL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:BEL', liquidityTier: 'Immediate' },
+  { id: 'sbin', name: 'SBIN', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:SBIN', liquidityTier: 'Immediate' },
+  { id: 'hal', name: 'HAL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:HAL', liquidityTier: 'Immediate' },
+  { id: 'hdfcbank', name: 'HDFC BANK', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:HDFCBANK', liquidityTier: 'Immediate' },
+  { id: 'jiofin', name: 'JIOFIN', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:JIOFIN', liquidityTier: 'Immediate' },
+  { id: 'mazdock', name: 'MAZDOCK', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:MAZDOCK', liquidityTier: 'Immediate' },
+  { id: 'eternal', name: 'ETERNAL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:ETERNAL', liquidityTier: 'Immediate' },
 
   // --- Derivatives (F&O) ---
   // No generic placeholder here anymore - F&O is now a category you add named
@@ -59,10 +59,10 @@ export const ASSET_MASTER = [
   // single bucket didn't reflect that you hold several distinct positions.
 
   // --- Commodities, gold bond, equity ETF ---
-  { id: 'goldbees', name: 'GOLDBEES', category: 'Commodity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'GOLDBEES', liquidityTier: 'Immediate' },
-  { id: 'silverbees', name: 'SILVERBEES', category: 'Commodity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'SILVERBEES', liquidityTier: 'Immediate' },
-  { id: 'sgb_sep29', name: 'SGBSEP29VI-GB', category: 'Gold Bond', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'SGBSEP29VI-GB', liquidityTier: 'Medium' },
-  { id: 'niftybees', name: 'NIFTY BeES', category: 'Equity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'NIFTYBEES', liquidityTier: 'Immediate' },
+  { id: 'goldbees', name: 'GOLDBEES', category: 'Commodity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:GOLDBEES', liquidityTier: 'Immediate' },
+  { id: 'silverbees', name: 'SILVERBEES', category: 'Commodity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:SILVERBEES', liquidityTier: 'Immediate' },
+  { id: 'sgb_sep29', name: 'SGBSEP29VI-GB', category: 'Gold Bond', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:SGBSEP29VI-GB', liquidityTier: 'Medium' },
+  { id: 'niftybees', name: 'NIFTY BeES', category: 'Equity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'GoogleFinance', symbol: 'NSE:NIFTYBEES', liquidityTier: 'Immediate' },
 
   // --- Retirement, deposits (manual) ---
   { id: 'nps_hdfc', name: 'National Pension Scheme - HDFC', category: 'NPS', baseCurrency: 'INR', trackingMethod: 'manual', source: null, symbol: '', liquidityTier: 'Illiquid' },
@@ -92,7 +92,7 @@ export const ASSET_MASTER = [
 // see PRD "Per-asset base currency" and Tech Stack "asset_trends.json... four
 // benchmarks... all as pinned entries."
 export const BENCHMARKS = [
-  { id: 'BENCHMARK_NIFTY50', name: 'Nifty 50 (via NIFTYBEES proxy)', baseCurrency: 'INR', source: 'TwelveData', symbol: 'NIFTYBEES' },
+  { id: 'BENCHMARK_NIFTY50', name: 'Nifty 50 (via NIFTYBEES proxy)', baseCurrency: 'INR', source: 'GoogleFinance', symbol: 'NSE:NIFTYBEES' },
   { id: 'BENCHMARK_NASDAQ', name: 'Nasdaq (via QQQ proxy)', baseCurrency: 'USD', source: 'TwelveData', symbol: 'QQQ' },
   { id: 'BENCHMARK_GOLD', name: 'Gold (via GOLDBEES proxy)', baseCurrency: 'INR', source: 'TwelveData', symbol: 'GOLDBEES' },
   { id: 'BENCHMARK_FD', name: 'Fixed Deposit (assumed rate)', baseCurrency: 'INR', source: 'fixed', symbol: null, assumedAnnualRate: 0.07 },

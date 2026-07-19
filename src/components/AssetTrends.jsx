@@ -9,7 +9,8 @@ const STALE_DAYS = 15
 const LIQUIDITY_TIERS = ['Immediate', 'Short', 'Medium', 'Illiquid']
 const SOURCES = [
   { value: 'AMFI', label: 'AMFI (mutual funds)' },
-  { value: 'TwelveData', label: 'Twelve Data (stocks/ETFs/FX)' },
+  { value: 'TwelveData', label: 'Twelve Data (US stocks/ETFs/FX/crypto)' },
+  { value: 'GoogleFinance', label: 'Google Finance (NSE stocks/ETFs, via Sheets)' },
   { value: 'CoinGecko', label: 'CoinGecko (crypto)' },
   { value: 'fixed', label: 'Fixed rate (compounds an assumed annual %, e.g. a real FD)' },
 ]
@@ -254,22 +255,40 @@ function ManageAssetsTable({ readOnly }) {
     return field in draft ? draft[field] : row[field]
   }
 
-  // Honest status, not just "connected if auto and no alert" - that was misleading
-  // for assets that had simply never been successfully fetched yet (which is exactly
-  // what every Indian stock/ETF looked like before the Twelve Data restriction was
-  // even discovered - they all said "connected" despite never having worked).
+  // Staleness applies to ANY price-tracked asset, manual or auto - manual ones (NPS,
+  // EPFO, unlisted stocks) are exactly the most likely to go stale, and the previous
+  // version only ever checked staleness when trackingMethod === 'auto', leaving every
+  // manual asset permanently showing a blank "—" no matter how old its last entry was.
   function statusFor(row, trackingMethod) {
     if (testing === row.id) return { label: 'testing…', cls: 'stale-badge' }
     const alert = alerts.find((a) => a.assetId === row.id)
     if (alert) return { label: '⚠ error', cls: 'stale-badge', title: alert.message }
-    if (trackingMethod !== 'auto') return { label: '—', cls: '' }
+
     const series = trends[row.id]
-    if (!series || !Object.keys(series).length) return { label: 'not yet connected', cls: 'stale-badge' }
+    if (!series || !Object.keys(series).length) {
+      return trackingMethod === 'auto'
+        ? { label: 'not yet connected', cls: 'stale-badge' }
+        : { label: 'no entries yet', cls: 'stale-badge' }
+    }
     const dates = Object.keys(series).sort()
     const lastDate = dates[dates.length - 1]
     const stale = Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) >= STALE_DAYS
     if (stale) return { label: `⚠ stale (since ${lastDate})`, cls: 'stale-badge' }
-    return { label: 'connected', cls: 'status-ok' }
+    return trackingMethod === 'auto'
+      ? { label: 'connected', cls: 'status-ok' }
+      : { label: `up to date (${lastDate})`, cls: 'status-ok' }
+  }
+
+  function deleteAsset(row) {
+    if (readOnly) return
+    if (!window.confirm(`Delete "${row.name}"? This removes it from settings but keeps any existing transactions/values orphaned (they just won't show anywhere) - not a full data wipe.`)) return
+    updateFile('settings.json', (prev) => {
+      const next = { ...prev.assets }
+      delete next[row.id]
+      return { assets: next }
+    })
+    const existingAlert = alerts.find((a) => a.assetId === row.id)
+    if (existingAlert) dismissAlert(existingAlert.id)
   }
 
   async function saveRow(row) {
@@ -406,6 +425,9 @@ function ManageAssetsTable({ readOnly }) {
                   >
                     save
                   </button>
+                  <button className="link-btn" disabled={readOnly} onClick={() => deleteAsset(row)}>
+                    delete
+                  </button>
                 </td>
               </tr>
             )
@@ -498,9 +520,8 @@ function AddAssetForm({ readOnly, existingCategories }) {
       {error && <div className="error-banner">⚠ {error}</div>}
       {confirmation && <div className="confirm-banner">✓ {confirmation}</div>}
       <p className="hint">
-        No delete option yet — flagged as a known gap, not built. Auto-tracking a new
-        asset: add it here as Manual first, then switch it to Auto and fill in
-        source/symbol in the row above once it exists.
+        Auto-tracking a new asset: add it here as Manual first, then switch it to
+        Auto and fill in source/symbol in the row above once it exists.
       </p>
     </div>
   )

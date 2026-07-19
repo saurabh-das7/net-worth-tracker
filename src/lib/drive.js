@@ -19,6 +19,10 @@ const MOCK_KEY_PREFIX = 'mock_drive__'
 let tokenClient = null
 let accessToken = null
 
+export function getAccessToken() {
+  return accessToken
+}
+
 // --- Auth ---------------------------------------------------------------
 
 export async function signIn() {
@@ -33,7 +37,10 @@ export async function signIn() {
   return new Promise((resolve, reject) => {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/drive.file',
+      // Sheets scope added for the GOOGLEFINANCE approach to Indian stock/ETF data -
+      // this means you'll likely see Google's consent screen again on next sign-in,
+      // since it's a new permission being requested, not just Drive anymore.
+      scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
       callback: (resp) => {
         if (resp.error) return reject(resp)
         accessToken = resp.access_token
