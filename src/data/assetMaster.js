@@ -53,8 +53,12 @@ export const ASSET_MASTER = [
   { id: 'mazdock', name: 'MAZDOCK', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'MAZDOCK', liquidityTier: 'Immediate' },
   { id: 'eternal', name: 'ETERNAL', category: 'Stocks', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'ETERNAL', liquidityTier: 'Immediate' },
 
-  // --- Derivatives, commodities, gold bond, equity ETF ---
-  { id: 'fno', name: 'F&O', category: 'Derivatives', baseCurrency: 'INR', trackingMethod: 'manual', source: null, symbol: '', liquidityTier: 'Immediate' },
+  // --- Derivatives (F&O) ---
+  // No generic placeholder here anymore - F&O is now a category you add named
+  // positions into via Asset Trends > Manage Assets > Add a new asset, since a
+  // single bucket didn't reflect that you hold several distinct positions.
+
+  // --- Commodities, gold bond, equity ETF ---
   { id: 'goldbees', name: 'GOLDBEES', category: 'Commodity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'GOLDBEES', liquidityTier: 'Immediate' },
   { id: 'silverbees', name: 'SILVERBEES', category: 'Commodity ETF', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'SILVERBEES', liquidityTier: 'Immediate' },
   { id: 'sgb_sep29', name: 'SGBSEP29VI-GB', category: 'Gold Bond', baseCurrency: 'INR', trackingMethod: 'auto', source: 'TwelveData', symbol: 'SGBSEP29VI-GB', liquidityTier: 'Medium' },

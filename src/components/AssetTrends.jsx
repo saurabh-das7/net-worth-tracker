@@ -7,7 +7,12 @@ import { validateDate } from '../lib/dateValidation.js'
 
 const STALE_DAYS = 15
 const LIQUIDITY_TIERS = ['Immediate', 'Short', 'Medium', 'Illiquid']
-const SOURCES = ['AMFI', 'TwelveData', 'CoinGecko', 'fixed']
+const SOURCES = [
+  { value: 'AMFI', label: 'AMFI (mutual funds)' },
+  { value: 'TwelveData', label: 'Twelve Data (stocks/ETFs/FX)' },
+  { value: 'CoinGecko', label: 'CoinGecko (crypto)' },
+  { value: 'fixed', label: 'Fixed rate (compounds an assumed annual %, e.g. a real FD)' },
+]
 
 function daysSince(dateStr) {
   if (!dateStr) return Infinity
@@ -111,6 +116,10 @@ export default function AssetTrends() {
     }
     if (manualValue === '' || Number.isNaN(parseFloat(manualValue))) {
       setManualError('Value is required and must be a number.')
+      return
+    }
+    if (parseFloat(manualValue) <= 0) {
+      setManualError('Value must be greater than zero — a price or rate can\'t be negative.')
       return
     }
     updateFile('asset_trends.json', (prev) => {
@@ -245,17 +254,35 @@ function ManageAssetsTable({ readOnly }) {
     return field in draft ? draft[field] : row[field]
   }
 
+  // Honest status, not just "connected if auto and no alert" - that was misleading
+  // for assets that had simply never been successfully fetched yet (which is exactly
+  // what every Indian stock/ETF looked like before the Twelve Data restriction was
+  // even discovered - they all said "connected" despite never having worked).
+  function statusFor(row, trackingMethod) {
+    if (testing === row.id) return { label: 'testing…', cls: 'stale-badge' }
+    const alert = alerts.find((a) => a.assetId === row.id)
+    if (alert) return { label: '⚠ error', cls: 'stale-badge', title: alert.message }
+    if (trackingMethod !== 'auto') return { label: '—', cls: '' }
+    const series = trends[row.id]
+    if (!series || !Object.keys(series).length) return { label: 'not yet connected', cls: 'stale-badge' }
+    const dates = Object.keys(series).sort()
+    const lastDate = dates[dates.length - 1]
+    const stale = Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) >= STALE_DAYS
+    if (stale) return { label: `⚠ stale (since ${lastDate})`, cls: 'stale-badge' }
+    return { label: 'connected', cls: 'status-ok' }
+  }
+
   async function saveRow(row) {
-    const draft = getDraft(row.id)
     const trackingMethod = effectiveValue(row, 'trackingMethod')
     const source = effectiveValue(row, 'source')
     const symbol = effectiveValue(row, 'symbol')
     const liquidityTier = effectiveValue(row, 'liquidityTier')
+    const assumedAnnualRate = effectiveValue(row, 'assumedAnnualRate')
 
     updateFile('settings.json', (prev) => ({
       assets: {
         ...prev.assets,
-        [row.id]: { ...prev.assets[row.id], trackingMethod, source, symbol, liquidityTier },
+        [row.id]: { ...prev.assets[row.id], trackingMethod, source, symbol, liquidityTier, assumedAnnualRate },
       },
     }))
 
@@ -267,11 +294,8 @@ function ManageAssetsTable({ readOnly }) {
       return
     }
 
-    // Auto tracking - test the symbol+source combination actually works before
-    // clearing any existing alert, per the request: "if no add an alert, if yes
-    // remove existing alert."
     setTesting(row.id)
-    const result = await refreshOne({ ...row, trackingMethod, source, symbol }, trends[row.id] || {}, undefined)
+    const result = await refreshOne({ ...row, trackingMethod, source, symbol, assumedAnnualRate }, trends[row.id] || {}, undefined)
     setTesting(null)
 
     if (result.ok) {
@@ -300,7 +324,7 @@ function ManageAssetsTable({ readOnly }) {
             <th>Category</th>
             <th>Tracking</th>
             <th>Source</th>
-            <th>Symbol</th>
+            <th>Symbol / rate</th>
             <th>Liquidity</th>
             <th>Status</th>
             <th></th>
@@ -308,9 +332,10 @@ function ManageAssetsTable({ readOnly }) {
         </thead>
         <tbody>
           {rows.map((row) => {
-            const alert = alerts.find((a) => a.assetId === row.id)
             const dirty = !!drafts[row.id]
             const trackingMethod = effectiveValue(row, 'trackingMethod')
+            const source = effectiveValue(row, 'source')
+            const status = statusFor(row, trackingMethod)
             return (
               <tr key={row.id}>
                 <td>{row.name}</td>
@@ -328,34 +353,36 @@ function ManageAssetsTable({ readOnly }) {
                 <td>
                   {trackingMethod === 'auto' ? (
                     <select
-                      value={effectiveValue(row, 'source') || ''}
+                      value={source || ''}
                       disabled={readOnly}
                       onChange={(e) => updateDraft(row.id, 'source', e.target.value)}
                     >
-                      <option value="" disabled>
-                        — pick —
-                      </option>
+                      <option value="" disabled>— pick —</option>
                       {SOURCES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
+                        <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
                     </select>
-                  ) : (
-                    '—'
-                  )}
+                  ) : '—'}
                 </td>
                 <td>
-                  {trackingMethod === 'auto' ? (
+                  {trackingMethod === 'auto' && source === 'fixed' ? (
+                    <input
+                      className="manage-symbol-input"
+                      type="number"
+                      step="any"
+                      placeholder="annual % e.g. 0.07"
+                      value={effectiveValue(row, 'assumedAnnualRate') ?? ''}
+                      disabled={readOnly}
+                      onChange={(e) => updateDraft(row.id, 'assumedAnnualRate', parseFloat(e.target.value))}
+                    />
+                  ) : trackingMethod === 'auto' ? (
                     <input
                       className="manage-symbol-input"
                       value={effectiveValue(row, 'symbol') || ''}
                       disabled={readOnly}
                       onChange={(e) => updateDraft(row.id, 'symbol', e.target.value)}
                     />
-                  ) : (
-                    '—'
-                  )}
+                  ) : '—'}
                 </td>
                 <td>
                   <select
@@ -364,22 +391,12 @@ function ManageAssetsTable({ readOnly }) {
                     onChange={(e) => updateDraft(row.id, 'liquidityTier', e.target.value)}
                   >
                     {LIQUIDITY_TIERS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
+                      <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </td>
                 <td>
-                  {testing === row.id ? (
-                    <span className="stale-badge">testing…</span>
-                  ) : alert ? (
-                    <span className="stale-badge" title={alert.message}>⚠ error</span>
-                  ) : trackingMethod === 'auto' ? (
-                    <span style={{ color: '#6ee7b7' }}>connected</span>
-                  ) : (
-                    '—'
-                  )}
+                  <span className={status.cls} title={status.title}>{status.label}</span>
                 </td>
                 <td>
                   <button
@@ -395,6 +412,96 @@ function ManageAssetsTable({ readOnly }) {
           })}
         </tbody>
       </table>
+
+      <AddAssetForm readOnly={readOnly} existingCategories={[...new Set(rows.map((r) => r.category))]} />
+    </div>
+  )
+}
+
+// New asset creation - addresses two things at once: the F&O request (named
+// individual positions instead of one generic bucket) and the standing gap where
+// the dropdown couldn't grow beyond the original 02b seed list. Only Manual and
+// Balance-snapshot are offered here - Auto requires a working source+symbol, which
+// is more naturally set up via this same table's row editor right after creation.
+function AddAssetForm({ readOnly, existingCategories }) {
+  const { updateFile } = useApp()
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [newCategory, setNewCategory] = useState('')
+  const [baseCurrency, setBaseCurrency] = useState('INR')
+  const [trackingMethod, setTrackingMethod] = useState('manual')
+  const [liquidityTier, setLiquidityTier] = useState('Medium')
+  const [error, setError] = useState(null)
+  const [confirmation, setConfirmation] = useState(null)
+
+  function slugify(str) {
+    return str.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_' + Math.random().toString(36).slice(2, 6)
+  }
+
+  function handleAdd(e) {
+    e.preventDefault()
+    setError(null)
+    setConfirmation(null)
+    if (readOnly) return
+    const finalCategory = category === '__new__' ? newCategory.trim() : category
+    if (!name.trim()) return setError('Name is required.')
+    if (!finalCategory) return setError('Category is required.')
+
+    const id = slugify(name)
+    updateFile('settings.json', (prev) => ({
+      assets: {
+        ...prev.assets,
+        [id]: {
+          name: name.trim(),
+          category: finalCategory,
+          baseCurrency,
+          trackingMethod,
+          source: null,
+          symbol: '',
+          liquidityTier: trackingMethod === 'balance_snapshot' ? null : liquidityTier,
+          isLiability: finalCategory === 'Debt' || finalCategory === 'Loan',
+        },
+      },
+    }))
+    setConfirmation(`Added "${name.trim()}" — it'll now show up in every dropdown.`)
+    setName('')
+  }
+
+  return (
+    <div className="add-asset-box">
+      <h4>Add a new asset</h4>
+      <form className="txn-form" onSubmit={handleAdd}>
+        <input placeholder="Name (e.g. NIFTY 24000 CE Jan)" value={name} onChange={(e) => setName(e.target.value)} disabled={readOnly} />
+        <select value={category} onChange={(e) => setCategory(e.target.value)} disabled={readOnly}>
+          <option value="">— category —</option>
+          {existingCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+          <option value="__new__">+ New category…</option>
+        </select>
+        {category === '__new__' && (
+          <input placeholder="New category name" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} disabled={readOnly} />
+        )}
+        <select value={baseCurrency} onChange={(e) => setBaseCurrency(e.target.value)} disabled={readOnly}>
+          <option value="INR">INR</option>
+          <option value="USD">USD</option>
+        </select>
+        <select value={trackingMethod} onChange={(e) => setTrackingMethod(e.target.value)} disabled={readOnly}>
+          <option value="manual">Manual (price-tracked)</option>
+          <option value="balance_snapshot">Balance-snapshot (no units)</option>
+        </select>
+        {trackingMethod !== 'balance_snapshot' && (
+          <select value={liquidityTier} onChange={(e) => setLiquidityTier(e.target.value)} disabled={readOnly}>
+            {LIQUIDITY_TIERS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+        <button type="submit" disabled={readOnly}>+ Add asset</button>
+      </form>
+      {error && <div className="error-banner">⚠ {error}</div>}
+      {confirmation && <div className="confirm-banner">✓ {confirmation}</div>}
+      <p className="hint">
+        No delete option yet — flagged as a known gap, not built. Auto-tracking a new
+        asset: add it here as Manual first, then switch it to Auto and fill in
+        source/symbol in the row above once it exists.
+      </p>
     </div>
   )
 }

@@ -46,7 +46,10 @@ export default function Transactions() {
     if (dateProblem) return dateProblem
     const amt = parseFloat(amount)
     if (amount === '' || Number.isNaN(amt)) return 'Amount is required and must be a number.'
-    if (!isBalanceSnapshot) {
+    if (isBalanceSnapshot) {
+      if (amt < 0 && !selected.isLiability) return 'Amount cannot be negative for this holding — only Debt/Loan items can go negative.'
+    } else {
+      if (amt <= 0) return 'Amount must be greater than zero.'
       const u = parseFloat(units)
       if (units === '' || Number.isNaN(u)) return 'Units is required and must be a number for this holding type.'
       if (u <= 0) return 'Units must be greater than zero.'
@@ -207,6 +210,16 @@ export default function Transactions() {
     const amt = parseFloat(editDraft.amount)
     if (editDraft.amount === '' || Number.isNaN(amt)) {
       setEditError('Amount is required and must be a number.')
+      return
+    }
+    const rowAsset = assets[row.assetId]
+    if (row.rowType === 'balance') {
+      if (amt < 0 && !rowAsset?.isLiability) {
+        setEditError('Amount cannot be negative for this holding — only Debt/Loan items can go negative.')
+        return
+      }
+    } else if (amt <= 0) {
+      setEditError('Amount must be greater than zero.')
       return
     }
 
