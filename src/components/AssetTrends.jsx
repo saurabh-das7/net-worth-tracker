@@ -3,8 +3,11 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContai
 import { useApp } from '../context/AppContext.jsx'
 import { BENCHMARKS, FX_PSEUDO_ASSET } from '../data/assetMaster.js'
 import { refreshOne } from '../lib/refresh.js'
+import { validateDate } from '../lib/dateValidation.js'
 
 const STALE_DAYS = 15
+const LIQUIDITY_TIERS = ['Immediate', 'Short', 'Medium', 'Illiquid']
+const SOURCES = ['AMFI', 'TwelveData', 'CoinGecko', 'fixed']
 
 function daysSince(dateStr) {
   if (!dateStr) return Infinity
@@ -16,17 +19,17 @@ export default function AssetTrends() {
   const assets = files['settings.json']?.assets || {}
   const trends = files['asset_trends.json']?.trends || {}
   const transactions = files['transactions.json']?.transactions || []
+  const readOnly = dataSource !== 'mydata'
 
-  // Picker includes held assets, the FX pseudo-asset, and the four benchmarks — all
-  // using the same trend/edit/backfill machinery, per the PRD.
-  //
-  // IMPORTANT: use Object.entries (the map KEY) for id, not a.id. Demo's dataset
-  // happens to redundantly store `id` inside each asset value too, which is why this
-  // worked in Demo but silently broke in My Data - buildInitialSettings() correctly
-  // does NOT duplicate id inside the value (it's already the object key), so a.id was
-  // undefined there, making every <option value> collapse to the same empty string.
+  // Picker scope: price-tracked assets only (auto or manual price-feed), plus FX and
+  // benchmarks. Balance-snapshot assets (Cash/Account/Debt/Loan/Security Deposit) are
+  // deliberately excluded here now - they're entered directly in Transactions, which
+  // is the single place for them, per the last round's fix. Showing them here too
+  // would just be confusing duplicate entry points for the same data.
   const pickerOptions = useMemo(() => {
-    const heldOptions = Object.entries(assets).map(([id, a]) => ({ id, name: a.name, source: a.source, symbol: a.symbol }))
+    const heldOptions = Object.entries(assets)
+      .filter(([, a]) => a.trackingMethod !== 'balance_snapshot')
+      .map(([id, a]) => ({ id, name: a.name, source: a.source, symbol: a.symbol }))
     const fxOption = { id: FX_PSEUDO_ASSET.id, name: FX_PSEUDO_ASSET.name, source: FX_PSEUDO_ASSET.source, symbol: FX_PSEUDO_ASSET.symbol }
     const benchmarkOptions = BENCHMARKS.map((b) => ({ id: b.id, name: b.name, source: b.source, symbol: b.symbol, assumedAnnualRate: b.assumedAnnualRate }))
     return [...heldOptions, fxOption, ...benchmarkOptions]
@@ -34,13 +37,11 @@ export default function AssetTrends() {
 
   const [selectedId, setSelectedId] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-  const [symbolDraft, setSymbolDraft] = useState('')
   const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10))
   const [manualValue, setManualValue] = useState('')
+  const [manualError, setManualError] = useState(null)
+  const [showManage, setShowManage] = useState(false)
 
-  // Same lesson as Transactions.jsx: never silently keep a stale selection when the
-  // underlying list changes (e.g. Demo <-> My Data switch) - reset and force a
-  // deliberate re-pick rather than risk pointing at the wrong asset.
   useEffect(() => {
     if (selectedId && !pickerOptions.some((o) => o.id === selectedId)) {
       setSelectedId('')
@@ -66,9 +67,7 @@ export default function AssetTrends() {
 
   const lastActualDate = fullChartData.length ? fullChartData[fullChartData.length - 1].date : null
   const isStale = daysSince(lastActualDate) >= STALE_DAYS
-
   const alertForAsset = alerts.find((a) => a.assetId === selectedId)
-  const readOnly = dataSource !== 'mydata'
 
   if (dataLoading) {
     return (
@@ -91,55 +90,36 @@ export default function AssetTrends() {
     setRefreshing(false)
 
     if (!result.ok) {
-      addAlert({
-        assetId: selectedId,
-        type: 'sync_error',
-        message: `${selected.name}: ${result.error}`,
-      })
+      addAlert({ assetId: selectedId, type: 'sync_error', message: `${selected.name}: ${result.error}` })
       return
     }
     updateFile('asset_trends.json', (prev) => ({
       trends: { ...(prev?.trends || {}), [selectedId]: result.series },
     }))
+    const existingAlert = alerts.find((a) => a.assetId === selectedId)
+    if (existingAlert) dismissAlert(existingAlert.id)
   }
 
   function handleManualAdd(e) {
     e.preventDefault()
-    if (readOnly || !manualValue || !selectedId) return
+    setManualError(null)
+    if (readOnly || !selectedId) return
+    const dateProblem = validateDate(manualDate)
+    if (dateProblem) {
+      setManualError(dateProblem)
+      return
+    }
+    if (manualValue === '' || Number.isNaN(parseFloat(manualValue))) {
+      setManualError('Value is required and must be a number.')
+      return
+    }
     updateFile('asset_trends.json', (prev) => {
       const prevSeries = prev?.trends?.[selectedId] || {}
       return {
-        trends: {
-          ...(prev?.trends || {}),
-          [selectedId]: { ...prevSeries, [manualDate]: parseFloat(manualValue) },
-        },
+        trends: { ...(prev?.trends || {}), [selectedId]: { ...prevSeries, [manualDate]: parseFloat(manualValue) } },
       }
     })
     setManualValue('')
-  }
-
-  function saveSymbol() {
-    if (readOnly || !symbolDraft) return
-    if (!assets[selectedId]) {
-      // Benchmarks and the FX pseudo-asset aren't stored in settings.assets - their
-      // symbols come from static config (assetMaster.js), not per-user settings.
-      // Correcting one of those isn't wired up yet - flagged honestly rather than
-      // silently writing a bogus entry into settings that nothing would ever read.
-      addAlert({
-        assetId: selectedId,
-        type: 'sync_error',
-        message: `${selected?.name}: symbol correction for benchmarks/FX isn't supported yet - only held assets.`,
-      })
-      return
-    }
-    updateFile('settings.json', (prev) => ({
-      assets: {
-        ...prev.assets,
-        [selectedId]: { ...prev.assets[selectedId], symbol: symbolDraft },
-      },
-    }))
-    if (alertForAsset) dismissAlert(alertForAsset.id)
-    setSymbolDraft('')
   }
 
   return (
@@ -162,81 +142,259 @@ export default function AssetTrends() {
         </button>
       </div>
 
-      <div className="status-bar">
-        <span>
-          Last actual update: <strong>{lastActualDate || 'never'}</strong>
-          {isStale && <span className="stale-badge"> ⚠ stale (15+ days)</span>}
-        </span>
-        <span>
-          Symbol/code: <strong>{selected?.symbol || '(none)'}</strong>
-        </span>
-        {/* Was checking assets[selectedId]?.source, which only resolves for held
-            assets - benchmarks and the FX pseudo-asset aren't in the assets map at
-            all, so their TwelveData-sourced entries (Nasdaq/QQQ proxy, USD/INR) never
-            showed the symbol-edit field even though they legitimately need it too.
-            'selected' is already uniformly resolved across all three types. */}
-        {selected?.source === 'TwelveData' ? (
-          <span className="edit-symbol">
+      {selectedId && (
+        <>
+          <div className="status-bar">
+            <span>
+              Last actual update: <strong>{lastActualDate || 'never'}</strong>
+              {isStale && <span className="stale-badge"> ⚠ stale (15+ days)</span>}
+            </span>
+            <span>
+              Symbol/code: <strong>{selected?.symbol || '(none)'}</strong> — edit this and
+              all other asset settings in Manage Assets below.
+            </span>
+          </div>
+
+          {alertForAsset && <div className="error-banner">⚠ {alertForAsset.message}</div>}
+
+          <div className="chart-box">
+            <div className="chip-row">
+              {Object.keys(RANGES).map((r) => (
+                <button key={r} className={r === range ? 'chip active' : 'chip'} onClick={() => setRange(r)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} minTickGap={40} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} domain={['auto', 'auto']} />
+                <Tooltip contentStyle={{ background: '#111827', border: '1px solid #1f2937' }} />
+                <Line type="stepAfter" dataKey="value" stroke="#10b981" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+            <p className="hint">
+              Step line — flat segments are forward-filled, dots would be actual entries
+              at higher zoom.
+            </p>
+          </div>
+
+          <form className="txn-form" onSubmit={handleManualAdd}>
+            <input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
             <input
-              placeholder="correct symbol…"
-              value={symbolDraft}
-              onChange={(e) => setSymbolDraft(e.target.value)}
-              disabled={readOnly}
+              type="number"
+              step="any"
+              placeholder="Value"
+              value={manualValue}
+              onChange={(e) => setManualValue(e.target.value)}
             />
-            <button onClick={saveSymbol} disabled={readOnly}>
-              save
+            <button type="submit" disabled={readOnly}>
+              + Add value manually
             </button>
-          </span>
-        ) : null}
-      </div>
-
-      {alertForAsset && <div className="error-banner">⚠ {alertForAsset.message}</div>}
-
-      <div className="chart-box">
-        <div className="chip-row">
-          {Object.keys(RANGES).map((r) => (
-            <button
-              key={r}
-              className={r === range ? 'chip active' : 'chip'}
-              onClick={() => setRange(r)}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} minTickGap={40} />
-            <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} domain={['auto', 'auto']} />
-            <Tooltip contentStyle={{ background: '#111827', border: '1px solid #1f2937' }} />
-            <Line type="stepAfter" dataKey="value" stroke="#10b981" dot={false} strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
-        <p className="hint">
-          Step line — flat segments are forward-filled (weekend gaps or genuinely stale
-          manual entries), dots would be actual entries at higher zoom.
-        </p>
-      </div>
-
-      <form className="txn-form" onSubmit={handleManualAdd}>
-        <input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
-        <input
-          type="number"
-          step="any"
-          placeholder="Value"
-          value={manualValue}
-          onChange={(e) => setManualValue(e.target.value)}
-        />
-        <button type="submit" disabled={readOnly || !selectedId}>
-          + Add value manually
-        </button>
-      </form>
+          </form>
+          {manualError && <div className="error-banner">⚠ {manualError}</div>}
+        </>
+      )}
 
       <p className="hint">
         LLM Paste &amp; Interpret and file upload for bulk/retrospective backfill land
         at M5 — manual single-date entry and Refresh only for now.
       </p>
+
+      <button className="link-btn manage-toggle" onClick={() => setShowManage((s) => !s)}>
+        {showManage ? '▾' : '▸'} Manage Assets {alerts.length > 0 && `(${alerts.length} alert${alerts.length > 1 ? 's' : ''})`}
+      </button>
+
+      {showManage && <ManageAssetsTable readOnly={readOnly} />}
+    </div>
+  )
+}
+
+// Consolidated per-asset settings: tracking method, source, symbol, liquidity tier,
+// and status (from the alerts list) - one place instead of scattered across tabs.
+// Saving an auto-tracked row actually test-fetches a small window to confirm the
+// symbol+source combination works before clearing any existing alert.
+function ManageAssetsTable({ readOnly }) {
+  const { files, updateFile, alerts, addAlert, dismissAlert } = useApp()
+  const assets = files['settings.json']?.assets || {}
+  const trends = files['asset_trends.json']?.trends || {}
+
+  const [search, setSearch] = useState('')
+  const [drafts, setDrafts] = useState({}) // assetId -> partial edits pending save
+  const [testing, setTesting] = useState(null) // assetId currently being test-fetched
+
+  const rows = useMemo(() => {
+    return Object.entries(assets)
+      .filter(([, a]) => a.trackingMethod !== 'balance_snapshot')
+      .map(([id, a]) => ({ id, ...a }))
+      .filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [assets, search])
+
+  function getDraft(id) {
+    return drafts[id] || {}
+  }
+
+  function updateDraft(id, field, value) {
+    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }))
+  }
+
+  function effectiveValue(row, field) {
+    const draft = getDraft(row.id)
+    return field in draft ? draft[field] : row[field]
+  }
+
+  async function saveRow(row) {
+    const draft = getDraft(row.id)
+    const trackingMethod = effectiveValue(row, 'trackingMethod')
+    const source = effectiveValue(row, 'source')
+    const symbol = effectiveValue(row, 'symbol')
+    const liquidityTier = effectiveValue(row, 'liquidityTier')
+
+    updateFile('settings.json', (prev) => ({
+      assets: {
+        ...prev.assets,
+        [row.id]: { ...prev.assets[row.id], trackingMethod, source, symbol, liquidityTier },
+      },
+    }))
+
+    const existingAlert = alerts.find((a) => a.assetId === row.id)
+
+    if (trackingMethod === 'manual') {
+      if (existingAlert) dismissAlert(existingAlert.id)
+      setDrafts((prev) => ({ ...prev, [row.id]: undefined }))
+      return
+    }
+
+    // Auto tracking - test the symbol+source combination actually works before
+    // clearing any existing alert, per the request: "if no add an alert, if yes
+    // remove existing alert."
+    setTesting(row.id)
+    const result = await refreshOne({ ...row, trackingMethod, source, symbol }, trends[row.id] || {}, undefined)
+    setTesting(null)
+
+    if (result.ok) {
+      updateFile('asset_trends.json', (prev) => ({
+        trends: { ...(prev?.trends || {}), [row.id]: result.series },
+      }))
+      if (existingAlert) dismissAlert(existingAlert.id)
+    } else {
+      addAlert({ assetId: row.id, type: 'sync_error', message: `${row.name}: ${result.error}` })
+    }
+    setDrafts((prev) => ({ ...prev, [row.id]: undefined }))
+  }
+
+  return (
+    <div className="manage-table-wrap">
+      <input
+        className="manage-search"
+        placeholder="Search assets…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <table className="data-table manage-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Category</th>
+            <th>Tracking</th>
+            <th>Source</th>
+            <th>Symbol</th>
+            <th>Liquidity</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const alert = alerts.find((a) => a.assetId === row.id)
+            const dirty = !!drafts[row.id]
+            const trackingMethod = effectiveValue(row, 'trackingMethod')
+            return (
+              <tr key={row.id}>
+                <td>{row.name}</td>
+                <td>{row.category}</td>
+                <td>
+                  <select
+                    value={trackingMethod}
+                    disabled={readOnly}
+                    onChange={(e) => updateDraft(row.id, 'trackingMethod', e.target.value)}
+                  >
+                    <option value="manual">Manual</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                </td>
+                <td>
+                  {trackingMethod === 'auto' ? (
+                    <select
+                      value={effectiveValue(row, 'source') || ''}
+                      disabled={readOnly}
+                      onChange={(e) => updateDraft(row.id, 'source', e.target.value)}
+                    >
+                      <option value="" disabled>
+                        — pick —
+                      </option>
+                      {SOURCES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>
+                  {trackingMethod === 'auto' ? (
+                    <input
+                      className="manage-symbol-input"
+                      value={effectiveValue(row, 'symbol') || ''}
+                      disabled={readOnly}
+                      onChange={(e) => updateDraft(row.id, 'symbol', e.target.value)}
+                    />
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>
+                  <select
+                    value={effectiveValue(row, 'liquidityTier') || ''}
+                    disabled={readOnly}
+                    onChange={(e) => updateDraft(row.id, 'liquidityTier', e.target.value)}
+                  >
+                    {LIQUIDITY_TIERS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  {testing === row.id ? (
+                    <span className="stale-badge">testing…</span>
+                  ) : alert ? (
+                    <span className="stale-badge" title={alert.message}>⚠ error</span>
+                  ) : trackingMethod === 'auto' ? (
+                    <span style={{ color: '#6ee7b7' }}>connected</span>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>
+                  <button
+                    className="link-btn"
+                    disabled={readOnly || !dirty || testing === row.id}
+                    onClick={() => saveRow(row)}
+                  >
+                    save
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

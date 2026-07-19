@@ -1,24 +1,24 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useApp } from '../context/AppContext.jsx'
+import { validateDate } from '../lib/dateValidation.js'
 
-const EMPTY = '' // placeholder value for "nothing selected yet"
+const EMPTY = ''
+const PAGE_SIZE = 20
+const ALL = 'All'
 
 export default function Transactions() {
   const { files, updateFile, dataSource, dataLoading } = useApp()
   const assets = files['settings.json']?.assets || {}
   const transactions = files['transactions.json']?.transactions || []
   const trends = files['asset_trends.json']?.trends || {}
+  const readOnly = dataSource !== 'mydata'
 
-  // Every asset is selectable here now - price-tracked ones get the full buy/sell
-  // form, balance-snapshot ones (Cash/Account/Debt/Loan/Security Deposit) get a
-  // simpler date+amount form instead. This pulls forward the piece of Asset Trends
-  // (M3) needed to record a bank/card balance, since waiting for that tab to exist
-  // just to enter "HDFC Savings = 150000" was a real gap.
   const allAssets = useMemo(
     () => Object.entries(assets).map(([id, a]) => ({ id, ...a })).sort((a, b) => a.name.localeCompare(b.name)),
     [assets],
   )
 
+  // --- Add form -------------------------------------------------------------
   const [assetId, setAssetId] = useState(EMPTY)
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [type, setType] = useState('buy')
@@ -28,18 +28,12 @@ export default function Transactions() {
   const [error, setError] = useState(null)
   const [confirmation, setConfirmation] = useState(null)
 
-  // If the currently-selected asset disappears from the list (e.g. switching data
-  // source), fall back to nothing-selected rather than silently pointing at a stale
-  // or wrong asset - forces a deliberate re-selection instead of guessing.
   useEffect(() => {
-    if (assetId && !allAssets.some((a) => a.id === assetId)) {
-      setAssetId(EMPTY)
-    }
+    if (assetId && !allAssets.some((a) => a.id === assetId)) setAssetId(EMPTY)
   }, [allAssets, assetId])
 
   const selected = allAssets.find((a) => a.id === assetId)
   const isBalanceSnapshot = selected?.trackingMethod === 'balance_snapshot'
-  const readOnly = dataSource !== 'mydata'
 
   function resetFeedback() {
     setError(null)
@@ -48,7 +42,8 @@ export default function Transactions() {
 
   function validate() {
     if (!assetId) return 'Select a holding first.'
-    if (!date) return 'Date is required.'
+    const dateProblem = validateDate(date)
+    if (dateProblem) return dateProblem
     const amt = parseFloat(amount)
     if (amount === '' || Number.isNaN(amt)) return 'Amount is required and must be a number.'
     if (!isBalanceSnapshot) {
@@ -63,7 +58,6 @@ export default function Transactions() {
     e.preventDefault()
     resetFeedback()
     if (readOnly) return
-
     const problem = validate()
     if (problem) {
       setError(problem)
@@ -78,48 +72,184 @@ export default function Transactions() {
       })
       setConfirmation(`Recorded ${selected.name} balance of ${amount} on ${date}.`)
     } else {
-      const t = {
-        id: crypto.randomUUID(),
-        date,
-        assetId,
-        type,
-        units: parseFloat(units),
-        amount: parseFloat(amount),
-        currency,
-      }
-      updateFile('transactions.json', (prev) => ({
-        transactions: [...(prev?.transactions || []), t],
-      }))
+      const t = { id: crypto.randomUUID(), date, assetId, type, units: parseFloat(units), amount: parseFloat(amount), currency }
+      updateFile('transactions.json', (prev) => ({ transactions: [...(prev?.transactions || []), t] }))
       setConfirmation(`Added ${type} of ${selected.name} — ${units} units for ${amount} ${currency}.`)
     }
     setUnits('')
     setAmount('')
+    setSortField('date')
+    setSortDir('desc')
+    setPage(1)
   }
 
-  function deleteTransaction(id) {
-    if (readOnly) return
-    updateFile('transactions.json', (prev) => ({
-      transactions: (prev?.transactions || []).filter((t) => t.id !== id),
+  // --- Combined rows: buy/sell transactions + balance-snapshot updates ------
+  // Merged into one table per request, tagged by rowType since edit/delete behave
+  // differently (transactions live in transactions.json, balance updates are dated
+  // entries inside asset_trends.json for that asset).
+  const combinedRows = useMemo(() => {
+    const txnRows = transactions.map((t) => ({
+      rowId: t.id,
+      rowType: 'transaction',
+      date: t.date,
+      assetId: t.assetId,
+      holding: assets[t.assetId]?.name || `(unknown: ${t.assetId})`,
+      category: assets[t.assetId]?.category || '—',
+      type: t.type,
+      units: t.units,
+      amount: t.amount,
+      currency: t.currency,
     }))
-  }
-
-  const sortedTxns = [...transactions].sort((a, b) => b.date.localeCompare(a.date))
-
-  // Recent balance-snapshot entries, flattened across all balance-type assets, for
-  // visible confirmation that an HDFC/Debt entry actually got recorded - these live
-  // in asset_trends.json, a different file from buy/sell transactions, so they don't
-  // belong in the same table below.
-  const recentBalanceEntries = useMemo(() => {
-    const rows = []
+    const balanceRows = []
     for (const a of allAssets) {
       if (a.trackingMethod !== 'balance_snapshot') continue
       const series = trends[a.id] || {}
       for (const [d, v] of Object.entries(series)) {
-        rows.push({ assetName: a.name, date: d, value: v })
+        balanceRows.push({
+          rowId: `${a.id}__${d}`,
+          rowType: 'balance',
+          date: d,
+          assetId: a.id,
+          holding: a.name,
+          category: a.category,
+          type: 'balance',
+          units: null,
+          amount: v,
+          currency: a.baseCurrency,
+        })
       }
     }
-    return rows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10)
-  }, [allAssets, trends])
+    return [...txnRows, ...balanceRows]
+  }, [transactions, allAssets, assets, trends])
+
+  // --- Filters ---------------------------------------------------------------
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [holdingFilter, setHoldingFilter] = useState(ALL)
+  const [categoryFilter, setCategoryFilter] = useState(ALL)
+  const [typeFilter, setTypeFilter] = useState(ALL)
+  const [currencyFilter, setCurrencyFilter] = useState(ALL)
+
+  const categories = useMemo(() => [ALL, ...new Set(allAssets.map((a) => a.category))], [allAssets])
+
+  const filteredRows = useMemo(() => {
+    return combinedRows.filter((r) => {
+      if (dateFrom && r.date < dateFrom) return false
+      if (dateTo && r.date > dateTo) return false
+      if (holdingFilter !== ALL && r.assetId !== holdingFilter) return false
+      if (categoryFilter !== ALL && r.category !== categoryFilter) return false
+      if (typeFilter !== ALL && r.type !== typeFilter) return false
+      if (currencyFilter !== ALL && r.currency !== currencyFilter) return false
+      return true
+    })
+  }, [combinedRows, dateFrom, dateTo, holdingFilter, categoryFilter, typeFilter, currencyFilter])
+
+  // --- Sort --------------------------------------------------------------
+  const [sortField, setSortField] = useState('date')
+  const [sortDir, setSortDir] = useState('desc')
+
+  function toggleSort(field) {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+    setPage(1)
+  }
+
+  const sortedRows = useMemo(() => {
+    const rows = [...filteredRows]
+    rows.sort((a, b) => {
+      let av = a[sortField]
+      let bv = b[sortField]
+      if (av === null || av === undefined) av = -Infinity
+      if (bv === null || bv === undefined) bv = -Infinity
+      if (typeof av === 'string') av = av.toLowerCase()
+      if (typeof bv === 'string') bv = bv.toLowerCase()
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return rows
+  }, [filteredRows, sortField, sortDir])
+
+  // --- Pagination --------------------------------------------------------
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [totalPages, page])
+  const pageRows = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // --- Edit ----------------------------------------------------------------
+  const [editingRowId, setEditingRowId] = useState(null)
+  const [editDraft, setEditDraft] = useState({})
+  const [editError, setEditError] = useState(null)
+
+  function startEdit(row) {
+    setEditingRowId(row.rowId)
+    setEditDraft({ date: row.date, type: row.type, units: row.units ?? '', amount: row.amount, currency: row.currency })
+    setEditError(null)
+  }
+
+  function cancelEdit() {
+    setEditingRowId(null)
+    setEditError(null)
+  }
+
+  function saveEdit(row) {
+    const dateProblem = validateDate(editDraft.date)
+    if (dateProblem) {
+      setEditError(dateProblem)
+      return
+    }
+    const amt = parseFloat(editDraft.amount)
+    if (editDraft.amount === '' || Number.isNaN(amt)) {
+      setEditError('Amount is required and must be a number.')
+      return
+    }
+
+    if (row.rowType === 'balance') {
+      updateFile('asset_trends.json', (prev) => {
+        const prevTrends = prev?.trends || {}
+        const series = { ...(prevTrends[row.assetId] || {}) }
+        delete series[row.date] // date may have changed
+        series[editDraft.date] = amt
+        return { trends: { ...prevTrends, [row.assetId]: series } }
+      })
+    } else {
+      const u = parseFloat(editDraft.units)
+      if (editDraft.units === '' || Number.isNaN(u) || u <= 0) {
+        setEditError('Units is required and must be a positive number.')
+        return
+      }
+      updateFile('transactions.json', (prev) => ({
+        transactions: (prev?.transactions || []).map((t) =>
+          t.id === row.rowId
+            ? { ...t, date: editDraft.date, type: editDraft.type, units: u, amount: amt, currency: editDraft.currency }
+            : t,
+        ),
+      }))
+    }
+    setEditingRowId(null)
+  }
+
+  function deleteRow(row) {
+    if (readOnly) return
+    if (row.rowType === 'balance') {
+      updateFile('asset_trends.json', (prev) => {
+        const prevTrends = prev?.trends || {}
+        const series = { ...(prevTrends[row.assetId] || {}) }
+        delete series[row.date]
+        return { trends: { ...prevTrends, [row.assetId]: series } }
+      })
+    } else {
+      updateFile('transactions.json', (prev) => ({
+        transactions: (prev?.transactions || []).filter((t) => t.id !== row.rowId),
+      }))
+    }
+  }
 
   if (dataLoading) {
     return (
@@ -130,6 +260,8 @@ export default function Transactions() {
     )
   }
 
+  const sortArrow = (field) => (sortField === field ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
+
   return (
     <div>
       <h2>Transactions</h2>
@@ -139,16 +271,8 @@ export default function Transactions() {
       </p>
 
       <form className="txn-form" onSubmit={handleSubmit}>
-        <select
-          value={assetId}
-          onChange={(e) => {
-            setAssetId(e.target.value)
-            resetFeedback()
-          }}
-        >
-          <option value={EMPTY} disabled>
-            — Select a holding —
-          </option>
+        <select value={assetId} onChange={(e) => { setAssetId(e.target.value); resetFeedback() }}>
+          <option value={EMPTY} disabled>— Select a holding —</option>
           {allAssets.map((a) => (
             <option key={a.id} value={a.id}>
               {a.trackingMethod === 'balance_snapshot' ? `${a.name} (balance)` : a.name}
@@ -164,20 +288,14 @@ export default function Transactions() {
               <option value="buy">Buy</option>
               <option value="sell">Sell</option>
             </select>
-            <input
-              type="number"
-              step="any"
-              placeholder="Units"
-              value={units}
-              onChange={(e) => setUnits(e.target.value)}
-            />
+            <input type="number" step="any" placeholder="Units" value={units} onChange={(e) => setUnits(e.target.value)} />
           </>
         )}
 
         <input
           type="number"
           step="any"
-          placeholder={isBalanceSnapshot ? 'Balance amount' : 'Amount'}
+          placeholder={isBalanceSnapshot ? `Balance amount (${selected.baseCurrency})` : 'Amount'}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
@@ -189,76 +307,112 @@ export default function Transactions() {
           </select>
         )}
 
-        <button type="submit" disabled={readOnly || !assetId}>
-          Add
-        </button>
+        <button type="submit" disabled={readOnly || !assetId}>Add</button>
       </form>
 
       {error && <div className="error-banner">⚠ {error}</div>}
       {confirmation && <div className="confirm-banner">✓ {confirmation}</div>}
 
+      <div className="filter-row">
+        <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1) }} /></label>
+        <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1) }} /></label>
+        <select value={holdingFilter} onChange={(e) => { setHoldingFilter(e.target.value); setPage(1) }}>
+          <option value={ALL}>All holdings</option>
+          {allAssets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1) }}>
+          {categories.map((c) => <option key={c} value={c}>{c === ALL ? 'All categories' : c}</option>)}
+        </select>
+        <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}>
+          <option value={ALL}>All types</option>
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+          <option value="balance">Balance</option>
+        </select>
+        <select value={currencyFilter} onChange={(e) => { setCurrencyFilter(e.target.value); setPage(1) }}>
+          <option value={ALL}>All currencies</option>
+          <option value="INR">INR</option>
+          <option value="USD">USD</option>
+        </select>
+      </div>
+
       <table className="data-table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Holding</th>
-            <th>Type</th>
-            <th>Units</th>
-            <th>Amount</th>
-            <th>Ccy</th>
+            <th className="sortable" onClick={() => toggleSort('date')}>Date{sortArrow('date')}</th>
+            <th className="sortable" onClick={() => toggleSort('holding')}>Holding{sortArrow('holding')}</th>
+            <th className="sortable" onClick={() => toggleSort('category')}>Category{sortArrow('category')}</th>
+            <th className="sortable" onClick={() => toggleSort('type')}>Type{sortArrow('type')}</th>
+            <th className="sortable" onClick={() => toggleSort('units')}>Units{sortArrow('units')}</th>
+            <th className="sortable" onClick={() => toggleSort('amount')}>Amount{sortArrow('amount')}</th>
+            <th className="sortable" onClick={() => toggleSort('currency')}>Ccy{sortArrow('currency')}</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {sortedTxns.map((t) => (
-            <tr key={t.id}>
-              <td>{t.date}</td>
-              <td>{assets[t.assetId]?.name || `(unknown: ${t.assetId})`}</td>
-              <td>{t.type}</td>
-              <td>{t.units}</td>
-              <td>{t.amount}</td>
-              <td>{t.currency}</td>
-              <td>
-                {!readOnly && (
-                  <button className="link-btn" onClick={() => deleteTransaction(t.id)}>
-                    delete
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {!sortedTxns.length && (
-            <tr>
-              <td colSpan={7} className="empty">
-                No buy/sell transactions yet.
-              </td>
-            </tr>
+          {pageRows.map((r) => {
+            const isEditing = editingRowId === r.rowId
+            if (isEditing) {
+              return (
+                <tr key={r.rowId}>
+                  <td><input type="date" value={editDraft.date} onChange={(e) => setEditDraft({ ...editDraft, date: e.target.value })} /></td>
+                  <td>{r.holding}</td>
+                  <td>{r.category}</td>
+                  <td>
+                    {r.rowType === 'balance' ? 'balance' : (
+                      <select value={editDraft.type} onChange={(e) => setEditDraft({ ...editDraft, type: e.target.value })}>
+                        <option value="buy">buy</option>
+                        <option value="sell">sell</option>
+                      </select>
+                    )}
+                  </td>
+                  <td>
+                    {r.rowType === 'balance' ? '—' : (
+                      <input type="number" step="any" value={editDraft.units} onChange={(e) => setEditDraft({ ...editDraft, units: e.target.value })} />
+                    )}
+                  </td>
+                  <td><input type="number" step="any" value={editDraft.amount} onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value })} /></td>
+                  <td>{r.currency}</td>
+                  <td className="row-actions">
+                    <button className="link-btn" onClick={() => saveEdit(r)}>save</button>
+                    <button className="link-btn" onClick={cancelEdit}>cancel</button>
+                  </td>
+                </tr>
+              )
+            }
+            return (
+              <tr key={r.rowId}>
+                <td>{r.date}</td>
+                <td>{r.holding}</td>
+                <td>{r.category}</td>
+                <td>{r.type}</td>
+                <td>{r.units === null ? '—' : r.units}</td>
+                <td>{r.amount}</td>
+                <td>{r.currency}</td>
+                <td className="row-actions">
+                  {!readOnly && (
+                    <>
+                      <button className="link-btn" onClick={() => startEdit(r)}>edit</button>
+                      <button className="link-btn" onClick={() => deleteRow(r)}>delete</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+          {!pageRows.length && (
+            <tr><td colSpan={8} className="empty">No entries match the current filters.</td></tr>
           )}
         </tbody>
       </table>
+      {editError && <div className="error-banner">⚠ {editError}</div>}
 
-      {recentBalanceEntries.length > 0 && (
-        <>
-          <h3 className="sub-heading">Recent balance updates</h3>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Holding</th>
-                <th>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentBalanceEntries.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.date}</td>
-                  <td>{r.assetName}</td>
-                  <td>{r.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button disabled={page === 1} onClick={() => setPage((p) => p - 1)}>← Prev</button>
+          <span>Page {page} of {totalPages} ({sortedRows.length} entries)</span>
+          <button disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Next →</button>
+        </div>
       )}
     </div>
   )

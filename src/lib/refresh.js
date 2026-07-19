@@ -42,14 +42,27 @@ function forwardFillGaps(existingSeries, newPoints, fromDate, toDate) {
 // Refreshes a single asset/FX/benchmark entry. Returns { ok: true } or
 // { ok: false, error } — caller (AssetTrends.jsx) turns errors into alerts, per the
 // PRD's "sync/refresh error and last-updated visibility" requirement.
+const DEFAULT_LOOKBACK_DAYS = 90 // used when there's no transaction to anchor a
+// first-time backfill from - this applies to FX and benchmarks, which never have
+// transactions. Previously this silently fell back to "just yesterday," a single-day
+// window that fails outright if that one day happened to be a non-trading day -
+// exactly what produced the confusing "no data available" error on USD/INR.
+
 export async function refreshOne(assetMasterEntry, existingSeries, firstTxnDate) {
   const target = yesterday()
   const existingDates = Object.keys(existingSeries).sort()
   const lastStored = existingDates[existingDates.length - 1]
 
-  // First-connection backfill: if nothing stored yet, start from the asset's first
-  // transaction date instead of "last stored date + 1".
-  const fromDate = lastStored ? addDay(lastStored) : firstTxnDate || target
+  let fromDate
+  if (lastStored) {
+    fromDate = addDay(lastStored)
+  } else if (firstTxnDate) {
+    fromDate = firstTxnDate
+  } else {
+    const d = new Date()
+    d.setDate(d.getDate() - DEFAULT_LOOKBACK_DAYS)
+    fromDate = d.toISOString().slice(0, 10)
+  }
 
   if (fromDate > target) {
     return { ok: true, series: existingSeries, note: 'already up to date' }
@@ -59,7 +72,7 @@ export async function refreshOne(assetMasterEntry, existingSeries, firstTxnDate)
     let newPoints
     if (assetMasterEntry.source === 'AMFI') {
       if (!assetMasterEntry.amfiSchemeCode) {
-        throw new Error('No AMFI scheme code mapped for this fund yet')
+        throw new Error('No AMFI scheme code mapped for this fund yet — add one in Manage Assets below.')
       }
       newPoints = await fetchAmfiHistory(assetMasterEntry.amfiSchemeCode, fromDate)
     } else if (assetMasterEntry.source === 'CoinGecko') {
@@ -81,7 +94,9 @@ export async function refreshOne(assetMasterEntry, existingSeries, firstTxnDate)
     const merged = forwardFillGaps(existingSeries, newPoints, fromDate, target)
     return { ok: true, series: merged }
   } catch (err) {
-    return { ok: false, error: err.message }
+    // Include the actual requested range so a "no data" response is diagnosable
+    // (e.g. "that range was entirely a weekend") instead of a bare vendor message.
+    return { ok: false, error: `${err.message} (requested ${fromDate} to ${target})` }
   }
 }
 
