@@ -5,7 +5,7 @@ import { computeHoldings, totalNetWorth } from '../lib/holdings.js'
 const CATEGORY_ALL = 'All'
 
 export default function Holdings() {
-  const { files, currency } = useApp()
+  const { files, currency, dataLoading } = useApp()
   const [categoryFilter, setCategoryFilter] = useState(CATEGORY_ALL)
 
   const holdings = useMemo(
@@ -29,6 +29,15 @@ export default function Holdings() {
       : holdings.filter((h) => h.category === categoryFilter)
 
   const netWorth = totalNetWorth(holdings)
+
+  if (dataLoading) {
+    return (
+      <div>
+        <h2>Holdings</h2>
+        <p className="hint">Loading your data from Drive…</p>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -55,6 +64,7 @@ export default function Holdings() {
           <tr>
             <th>Name</th>
             <th>Category</th>
+            <th>Ccy</th>
             <th>Units</th>
             <th>Value</th>
             <th>Invested</th>
@@ -67,10 +77,9 @@ export default function Holdings() {
             <tr key={h.assetId} className={h.isLiability ? 'liability-row' : ''}>
               <td>{h.name}</td>
               <td>{h.category}</td>
+              <td>{h.baseCurrency}</td>
               <td>{h.units === null ? '—' : h.units.toFixed(4)}</td>
-              <td>
-                {h.baseCurrency} {h.currentValue.toLocaleString()}
-              </td>
+              <td>{h.currentValue.toLocaleString()}</td>
               <td>{h.invested === null ? '—' : h.invested.toLocaleString()}</td>
               <td>{h.unrealizedGain === null ? '—' : h.unrealizedGain.toLocaleString()}</td>
               <td>{h.isLiability ? '—' : h.liquidityTier}</td>
@@ -80,7 +89,9 @@ export default function Holdings() {
       </table>
 
       <div className="net-worth-strip">
-        Approx. net worth (unconverted base-currency sum, {currency} display pending M4):{' '}
+        Approx. net worth — <strong>not currency-converted yet</strong>, this sums
+        mixed INR and USD values as if they were the same unit. A real total needs the
+        FX conversion landing at M4 — treat this number as a placeholder, not real:{' '}
         <strong>{netWorth.toLocaleString()}</strong>
       </div>
     </div>

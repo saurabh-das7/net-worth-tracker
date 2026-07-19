@@ -21,6 +21,7 @@ export function AppProvider({ children }) {
   })
   const [syncStatus, setSyncStatus] = useState({ unsynced: 0, lastAttempt: null })
   const [alerts, setAlerts] = useState([]) // { id, assetId, type, message }
+  const [dataLoading, setDataLoading] = useState(false)
 
   useEffect(() => onSyncStatusChange(setSyncStatus), [])
 
@@ -29,6 +30,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (dataSource === 'demo') {
       setFiles(DEMO_DATA)
+      setDataLoading(false)
       return
     }
     if (dataSource === 'mydata' && signedIn) {
@@ -37,9 +39,14 @@ export function AppProvider({ children }) {
   }, [dataSource, signedIn])
 
   const loadMyData = useCallback(async () => {
-    await ensureAppFolderAndFiles()
-    const pulled = await pullFromDrive()
-    setFiles(pulled)
+    setDataLoading(true)
+    try {
+      await ensureAppFolderAndFiles()
+      const pulled = await pullFromDrive()
+      setFiles(pulled)
+    } finally {
+      setDataLoading(false)
+    }
   }, [])
 
   const connectMyData = useCallback(async () => {
@@ -88,6 +95,7 @@ export function AppProvider({ children }) {
     setTheme,
     signedIn,
     files,
+    dataLoading,
     updateFile,
     syncStatus,
     syncNow,

@@ -268,3 +268,21 @@ body {
   border-radius: 8px;
   font-size: 0.9rem;
 }
+
+/* Bugfix round - confirmation banner, sub-headings */
+.confirm-banner {
+  background: #052e1f;
+  border: 1px solid #065f46;
+  color: #6ee7b7;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.sub-heading {
+  font-size: 1rem;
+  color: var(--muted);
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
