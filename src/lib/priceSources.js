@@ -16,6 +16,13 @@
 const TWELVE_DATA_KEY = import.meta.env.VITE_TWELVE_DATA_API_KEY || ''
 const TWELVE_DATA_MOCK = !TWELVE_DATA_KEY || TWELVE_DATA_KEY === 'DUMMY_TWELVE_DATA_KEY'
 
+export async function searchAmfiSchemes(query) {
+  if (!query || query.length < 3) return []
+  const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`)
+  if (!res.ok) throw new Error('AMFI scheme search failed')
+  return res.json() // [{ schemeCode, schemeName }]
+}
+
 // --- AMFI (via mfapi.in) --------------------------------------------------
 
 export async function fetchAmfiHistory(schemeCode, fromDate) {

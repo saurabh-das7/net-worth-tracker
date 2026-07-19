@@ -485,3 +485,44 @@ body {
   margin: 0 0 10px;
   font-size: 0.9rem;
 }
+
+/* AMFI scheme picker */
+.amfi-picker {
+  position: relative;
+}
+
+.amfi-picker-selected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+}
+
+.amfi-picker-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  background: #0f172a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  width: 280px;
+  margin-top: 2px;
+}
+
+.amfi-picker-row {
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.amfi-picker-row:hover {
+  background: #1e293b;
+}
+
+.amfi-picker-code {
+  color: var(--muted);
+}

@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContai
 import { useApp } from '../context/AppContext.jsx'
 import { BENCHMARKS, FX_PSEUDO_ASSET } from '../data/assetMaster.js'
 import { refreshOne } from '../lib/refresh.js'
+import { searchAmfiSchemes } from '../lib/priceSources.js'
 import { validateDate } from '../lib/dateValidation.js'
 
 const STALE_DAYS = 15
@@ -221,6 +222,81 @@ export default function AssetTrends() {
   )
 }
 
+// Search-and-pick for AMFI scheme codes, rather than free-text entry. A wrong scheme
+// code silently shows the wrong fund's NAV history with no error at all - searching
+// mfapi.in's own database and letting the user visually confirm the exact plan
+// (Direct/Regular, Growth/IDCW) is much safer than transcribing a code from memory
+// or a search engine snippet.
+function AmfiSymbolPicker({ value, onChange, disabled }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  async function runSearch(q) {
+    setQuery(q)
+    if (q.length < 3) {
+      setResults([])
+      return
+    }
+    setSearching(true)
+    try {
+      const matches = await searchAmfiSchemes(q)
+      setResults(matches.slice(0, 15))
+    } catch {
+      setResults([])
+    }
+    setSearching(false)
+  }
+
+  return (
+    <div className="amfi-picker">
+      {value ? (
+        <div className="amfi-picker-selected">
+          <span>{value}</span>
+          {!disabled && (
+            <button className="link-btn" onClick={() => onChange('')}>
+              change
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <input
+            className="manage-symbol-input"
+            placeholder="search fund name…"
+            value={query}
+            disabled={disabled}
+            onChange={(e) => runSearch(e.target.value)}
+            onFocus={() => setOpen(true)}
+          />
+          {open && (searching || results.length > 0) && (
+            <div className="amfi-picker-results">
+              {searching && <div className="amfi-picker-row">searching…</div>}
+              {!searching &&
+                results.map((r) => (
+                  <div
+                    key={r.schemeCode}
+                    className="amfi-picker-row"
+                    onClick={() => {
+                      onChange(String(r.schemeCode))
+                      setOpen(false)
+                    }}
+                  >
+                    {r.schemeName} <span className="amfi-picker-code">#{r.schemeCode}</span>
+                  </div>
+                ))}
+              {!searching && !results.length && query.length >= 3 && (
+                <div className="amfi-picker-row">no matches</div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // Consolidated per-asset settings: tracking method, source, symbol, liquidity tier,
 // and status (from the alerts list) - one place instead of scattered across tabs.
 // Saving an auto-tracked row actually test-fetches a small window to confirm the
@@ -402,6 +478,12 @@ function ManageAssetsTable({ readOnly }) {
                       value={effectiveValue(row, 'assumedAnnualRate') ?? ''}
                       disabled={readOnly}
                       onChange={(e) => updateDraft(row.id, 'assumedAnnualRate', parseFloat(e.target.value))}
+                    />
+                  ) : trackingMethod === 'auto' && source === 'AMFI' ? (
+                    <AmfiSymbolPicker
+                      value={effectiveValue(row, 'symbol') || ''}
+                      onChange={(v) => updateDraft(row.id, 'symbol', v)}
+                      disabled={readOnly}
                     />
                   ) : trackingMethod === 'auto' ? (
                     <input
